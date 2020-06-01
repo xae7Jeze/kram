@@ -1,7 +1,7 @@
 --[[
 simple implementation of mapping conference names to ids and vice versa
 
-- needs 2 shared lua dicts defined in global nginx scope 
+- needs 2 shared lua dicts defined in global nginx scope
 lua_shared_dict conf2Id 5m;
 lua_shared_dict id2Conf 5m;
 - integrates in nginx location block with content_by_lua_file directive
@@ -37,6 +37,8 @@ function mapConf2Id (Conf)
   id = conf2Id:get(conf)
   if id ~= nil then 
     if string.match (id,'^%d+$') and tonumber(id,10) >= minPin and  tonumber(id,10) <= maxPin then
+       id2Conf:set(id,conf,expireTime)
+       conf2Id:set(conf,id,expireTime)
       return conf,id,nil
     else
       conf2Id:delete(conf)
@@ -74,6 +76,8 @@ function mapId2Conf(id)
     Id2Conf:delete(id)
     return nil,id,"e_conf_not_found"
   end
+  id2Conf:set(id,conf,expireTime)
+  conf2Id:set(conf,id,expireTime)
   return conf,id,nil
 end
 
