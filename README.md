@@ -3,3 +3,10 @@
 - renewProsodyCerts.sh - script to renew prosody's selfsigned certs
 - backup2zfs.sh - makes incremental backups to zfs on crypted luks-device
 - (u)mountZFSBackupVol.sh (u)mounts backvolume as described in backup2zfs.conf
+- gen_selfsigned_cert.sh
+- gen_pksc12_crt.pl
+- logAnonymizer.pl
+- ossl2rfc_codes.pl
+- setquota.sh
+- swapcheck.pl
+- pfmailq.c
