@@ -10,3 +10,4 @@
 - setquota.sh
 - swapcheck.pl
 - pfmailq.c
+- functions.sh
