@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-V=20210603.0
+V=20230316.0
 
 set -e -u
 
@@ -10,7 +10,8 @@ LANG=C
 
 ORG=""
 ALTNAMES=""
-CN=$({ hostname -f || hostname ; } 2>/dev/null)
+SUBJECT=""
+CN=""
 TARGET=/etc/ssl
 OWNER=root:root
 DAYS=3650
@@ -18,10 +19,12 @@ DAYS=3650
 USAGE() {
   cat <<-_
 	Usage: ${0##*/} -o <organisation> [ -L -O <OWNER> -c <commonname> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
+	       ${0##*/} -s <subject> [ -L -O <OWNER> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
 	Defaults:
 	  -o -> NODEFAULT
 	  -c -> fqdn
 	  -d -> 3650
+	  -s -> subject as expected from openssl's -subj arg.
 	  -T -> /etc/ssl (Has to exist)
 	  -a -> NONE (Comma separated list of SubjectAlternativeNames)
 	  -O -> $OWNER
@@ -54,6 +57,7 @@ while getopts a:c:d:Lo:O:s:T: opt;do
     O) OWNER=${OPTARG};;
     L) SYMLINK=1;;
     o) ORG=${OPTARG};;
+    s) SUBJECT=${OPTARG};;
     T) TARGET=${OPTARG};;
     *) USAGE;exit 1 ;;
   esac
@@ -61,9 +65,21 @@ done
 
 trap 'cleanup' EXIT 
 
-if [ -z "$ORG" -o -z "$CN" ];then
-  USAGE
-  exit 1
+
+
+if [ -n "$SUBJECT" ];then
+  if [ -n "$ORG" -o -n "$CN" ];then
+    USAGE
+    exit 1
+  fi
+	CN=$(echo ${SUBJECT} | sed 's#^.*/CN=\([^/][^/]*\).*$#\1#')
+else
+  CN=$({ hostname -f || hostname ; } 2>/dev/null)
+  if [ -z "$ORG" -o -z "$CN" ];then
+    USAGE
+    exit 1
+  fi
+	SUBJECT="/O=${ORG}/OU=Self Signed Certificate/CN=${CN}"
 fi
 
 if [ $DAYS -lt 1 ] ; then
@@ -125,6 +141,9 @@ elif echo $CN | fgrep -q ':'; then
   IPS="$IPS${IPS:+, }IP:$CN"
 elif echo $CN | fgrep -q '@'; then
   EMAILS="$EMAILS${EMAILS:+, }email:$CN"
+else
+  echo "INVALID CN '${CN}'"
+	exit 1
 fi
 ALTNAMES="${DOMAINS:+, }${DOMAINS}${EMAILS:+, }${EMAILS}${IPS:+, }${IPS}${URIS:+, }${URIS}"
 ALTNAMES=${ALTNAMES#, }
@@ -152,7 +171,11 @@ fi
 
 ## SSL Certs
 # Certs and key file
-F=$(echo -n ${ORG}-${CN} | sed -e 's/\*/wildcard/g' -e 's|//*|_|g' | tr -sc '[:print:]' '_' | tr -s '[:space:]' '_')
+if [ -n "${ORG}" ]; then
+  F=$(echo -n ${ORG}-${CN} | sed -e 's/\*/wildcard/g' -e 's|//*|_|g' | tr -sc '[:print:]' '_' | tr -s '[:space:]' '_')
+else	
+  F=$(echo -n ${CN} | sed -e 's/\*/wildcard/g' -e 's|//*|_|g' | tr -sc '[:print:]' '_' | tr -s '[:space:]' '_')
+fi
 
 SSL_CERT=${TARGET}/certs/${F}.crt
 SSL_KEY=${TARGET}/private/${F}.key
@@ -173,8 +196,8 @@ else
   PATH=${PATH}:/usr/bin/ssl
   if ! (
     umask 077
-    openssl req -utf8 -nodes -out "${SSL_CSR}"  -sha256 -newkey rsa:4096 -keyout "${SSL_KEY}" \
-      -subj "/O=${ORG}/OU=Self Signed Certificate/CN=${CN}" >/dev/null 2>&1 && \
+    openssl req -utf8 -nodes -out "${SSL_CSR}"  -sha256 -newkey rsa:4096 \
+			-keyout "${SSL_KEY}" -subj "${SUBJECT}" >/dev/null 2>&1 && \
     openssl rsa -in "${SSL_KEY}" -out "${SSL_KEY}" >/dev/null 2>&1 && \
     openssl x509 -req -days "${DAYS}" -in "${SSL_CSR}" -signkey "${SSL_KEY}" -out "${SSL_CERT}" \
       ${EXTENSION}  >/dev/null 2>&1
@@ -212,7 +235,7 @@ Key-file: ${SSL_KEY}
 
 Certificate Data:
 ----------------------------
-$(openssl x509 -nameopt oneline,-esc_msb -noout -text -in ${SSL_CERT}| egrep '^[[:space:]]*Validity|Not (Before|After)|Subject:|X509v3 Subject Alternative Name|DNS:|IP Address:email:'|sed -e 's/^[ 	]*//' -e '$s/^[ 	]*//')
+$(openssl x509 -nameopt utf8,-esc_msb -noout -text -in ${SSL_CERT}| egrep '^[[:space:]]*Validity|Not (Before|After)|Subject:|X509v3 Subject Alternative Name|DNS:|IP Address:email:'|sed -e 's/^[ 	]*//' -e '$s/^[ 	]*//')
 
 Cut and Paste snippet to use in apache's configuration
 ------------------------------------------------------
