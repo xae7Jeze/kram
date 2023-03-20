@@ -7,6 +7,7 @@ set -e -u
 PATH="/bin:/usr/bin:/sbin:/usr/sbin"
 LC_ALL=C
 LANG=C
+ME=${0##*/}
 
 ORG=""
 ALTNAMES=""
@@ -18,8 +19,8 @@ DAYS=3650
 
 USAGE() {
   cat <<-_
-	Usage: ${0##*/} -o <organisation> [ -L -O <OWNER> -c <commonname> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
-	       ${0##*/} -s <subject> [ -L -O <OWNER> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
+	Usage: ${ME} -o <organisation> [ -L -O <OWNER> -c <commonname> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
+	       ${ME} -s <subject> [ -L -O <OWNER> -a <SubjectAlternativeNames> -d <days> -T <TARGET_DIR> ]
 	Defaults:
 	  -o -> NODEFAULT
 	  -c -> fqdn
@@ -95,12 +96,12 @@ fi
 TARGET=$(cd "${TARGET}" && pwd -P) 
 
 if ! TDIR=$(mktemp -d) ; then
-  echo "Oops: could not create temporary dir"
+  echo "${ME}: Oops: could not create temporary dir" 1>&2
   exit 1
 fi
 
 if ! SSL_CSR=$(mktemp -p "${TDIR}"); then
-  echo "Oops: could not create temporary csr file"
+  echo "${ME}: Oops: could not create temporary csr file" 1>&2
   exit 1
 fi
 
@@ -113,15 +114,15 @@ if test -n "${ALTNAMES}" ; then
   OIFS=${IFS}
   IFS="," 
   for N in ${ALTNAMES};do
-    if echo $N | egrep -qi '^((\*\.)?([a-z0-9][a-z0-9-]*[a-z0-9]\.)+[a-z]{0,16}|localhost)$'; then
+    if echo $N | grep -E -qi '^((\*\.)?([a-z0-9][a-z0-9-]*[a-z0-9]\.)+[a-z]{0,16}|localhost)$'; then
       DOMAINS="$DOMAINS${DOMAINS:+, }DNS:$N"
     elif echo $N | grep -qi '^[a-z][a-z0-9.+-]*:'; then
       URIS="$URIS${URIS:+, }URI:$N"
-    elif echo $N | egrep -qi '^[0-9.]+$'; then
+    elif echo $N | grep -E -qi '^[0-9.]+$'; then
       IPS="$IPS${IPS:+, }IP:$N"
-    elif echo $N | fgrep -q ':'; then
+    elif echo $N | grep -F -q ':'; then
       IPS="$IPS${IPS:+, }IP:$N"
-    elif echo $N | fgrep -q '@'; then
+    elif echo $N | grep -F -q '@'; then
       EMAILS="$EMAILS${EMAILS:+, }email:$N"
     else
       USAGE
@@ -131,25 +132,25 @@ if test -n "${ALTNAMES}" ; then
   IFS=${OIFS}
 fi
 
-if echo $CN | egrep -qi '^((\*\.)?([a-z0-9][a-z0-9-]*[a-z0-9]\.)+[a-z]{0,16}|localhost)$'; then
+if echo $CN | grep -E -qi '^((\*\.)?([a-z0-9][a-z0-9-]*[a-z0-9]\.)+[a-z]{0,16}|localhost)$'; then
   DOMAINS="$DOMAINS${DOMAINS:+, }DNS:$CN"
 elif echo $CN | grep -qi '^[a-z][a-z0-9.+-]*:'; then
   URIS="$URIS${URIS:+, }URI:$CN"
-elif echo $CN | egrep -qi '^[0-9.]+$'; then
+elif echo $CN | grep -E -qi '^[0-9.]+$'; then
   IPS="$IPS${IPS:+, }IP:$CN"
-elif echo $CN | fgrep -q ':'; then
+elif echo $CN | grep -F -q ':'; then
   IPS="$IPS${IPS:+, }IP:$CN"
-elif echo $CN | fgrep -q '@'; then
+elif echo $CN | grep -F -q '@'; then
   EMAILS="$EMAILS${EMAILS:+, }email:$CN"
 else
-  echo "INVALID CN '${CN}'"
+  echo "${ME}: INVALID CN '${CN}'" 1>&2
 	exit 1
 fi
 ALTNAMES="${DOMAINS:+, }${DOMAINS}${EMAILS:+, }${EMAILS}${IPS:+, }${IPS}${URIS:+, }${URIS}"
 ALTNAMES=${ALTNAMES#, }
 
 if ! EXTFILE=$(mktemp -p "${TDIR}") ; then
-  echo "ERROR: Oops: could not create temporary extfile"
+  echo "${ME}: ERROR: Oops: could not create temporary extfile" 1>&2
   exit 1
 fi
 set -C
@@ -186,8 +187,8 @@ ORG=$(echo $ORG | sed 's|/|\\/|g')
 
 # Generate new certs if needed
 if [ -f "${SSL_CERT}" -o -f "${SSL_KEY}" ]; then
-  echo "You already have ssl certs for ORG: ${ORG} CN: ${CN}."
-  echo "Please remove ${SSL_CERT} and/or ${SSL_KEY} and run this script again"
+  echo "${ME}: You already have ssl certs for ORG: ${ORG} CN: ${CN}." 1>&2
+  echo "${ME}: Please remove ${SSL_CERT} and/or ${SSL_KEY} and run this script again" 1>&2
   exit 1
 else
   echo "Creating generic self-signed certificate: ${SSL_CERT}"
@@ -198,11 +199,10 @@ else
     umask 077
     openssl req -utf8 -nodes -out "${SSL_CSR}"  -sha256 -newkey rsa:4096 \
 			-keyout "${SSL_KEY}" -subj "${SUBJECT}" >/dev/null 2>&1 && \
-    openssl rsa -in "${SSL_KEY}" -out "${SSL_KEY}" >/dev/null 2>&1 && \
     openssl x509 -req -days "${DAYS}" -in "${SSL_CSR}" -signkey "${SSL_KEY}" -out "${SSL_CERT}" \
       ${EXTENSION}  >/dev/null 2>&1
     ) ; then
-    echo "ERROR : Bad SSL config, can't generate certificate";
+    echo "${ME}: ERROR : Bad SSL config, can't generate certificate"; 1>&2
     rm -f "${SSL_CERT}" "${SSL_KEY}"
     exit 1
   fi  
@@ -211,8 +211,8 @@ else
     :
   else
     echo
-    echo "WARNING: Setting correct ownership and/or permissions on cert/key failed"
-    echo "WARNING: Please fix"
+    echo "${ME}: WARNING: Setting correct ownership and/or permissions on cert/key failed" 1>&2
+    echo "${ME}: WARNING: Please fix" 1>&2
     echo
   fi
 fi
@@ -235,7 +235,7 @@ Key-file: ${SSL_KEY}
 
 Certificate Data:
 ----------------------------
-$(openssl x509 -nameopt utf8,-esc_msb -noout -text -in ${SSL_CERT}| egrep '^[[:space:]]*Validity|Not (Before|After)|Subject:|X509v3 Subject Alternative Name|DNS:|IP Address:email:'|sed -e 's/^[ 	]*//' -e '$s/^[ 	]*//')
+$(openssl x509 -nameopt utf8,-esc_msb -noout -text -in ${SSL_CERT}| grep -E '^[[:space:]]*Validity|Not (Before|After)|Subject:|X509v3 Subject Alternative Name|DNS:|IP Address:email:'|sed -e 's/^[ 	]*//' -e '$s/^[ 	]*//')
 
 Cut and Paste snippet to use in apache's configuration
 ------------------------------------------------------
