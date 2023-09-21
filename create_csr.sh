@@ -85,8 +85,7 @@ else
   echo "${ME}: INVALID CN '${CN}'" 1>&2
   exit 1
 fi
-ALTNAMES="${DOMAINS:+, }${DOMAINS}${EMAILS:+, }${EMAILS}${IPS:+, }${IPS}${URIS:+, }${URIS}"
-ALTNAMES=${ALTNAMES#, }
+ALTNAMES=$(echo -n "${DOMAINS:+, }${DOMAINS}${EMAILS:+, }${EMAILS}${IPS:+, }${IPS}${URIS:+, }${URIS}" | tr "," "\n" | sort | uniq | tr -s "\n" "," | sed -e 's/^[, ]*//' -e 's/[, ]*$//')
 
 BASE_FN=$(echo "${CN}" | tr -d [:cntrl:] | tr "A-Z" "a-z" | tr -cs '[a-z0-9._\-]' '_';)
 D=$(date +"%Y%m%d")
